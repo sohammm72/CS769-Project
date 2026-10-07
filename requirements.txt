@@ -1,0 +1,12 @@
+# Install PyTorch FIRST (see README Step 3), then: pip install -r requirements.txt
+# IndicTransToolkit is installed separately (needs C++ Build Tools on Windows, see README Step 4)
+
+# Must stay below 5.x: IndicTransToolkit breaks with transformers 5
+transformers<5
+
+sentencepiece
+sacremoses
+protobuf
+accelerate
+huggingface_hub
+tqdm

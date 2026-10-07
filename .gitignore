@@ -1,0 +1,29 @@
+# Virtual environment
+venv/
+.venv/
+
+# Downloaded models (many GB, each person downloads their own)
+models/
+
+# Generated results
+outputs/
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Secrets (never commit tokens)
+.env
+*.token
+
+# Large model files, in case they end up elsewhere
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.h5
+
+# Editor / OS files
+.vscode/
+.DS_Store
+Thumbs.db
