@@ -22,9 +22,9 @@ is in the Troubleshooting table, so check it before asking.
 | 2 | Shared gold set: 10,000 English→Hindi human pairs (Step 8) | Done |
 | 3 | Your own test set, different from the gold set (Step 9) | Done per person |
 | 4 | Translate with the models on Bilal's server (Step 10) | Waiting for Bilal to launch the models |
-| 5 | Consensus baseline and evaluation (Steps 12-13) | Scripts done |
+| 5 | Consensus baseline and evaluation (Steps 13-14) | Scripts done |
 | 6 | Real QE (CometKiwi) scoring and QE-reranking (Step 11) | Done and tested on the laptop (CPU) |
-| 7 | QE-fusion (the paper's Algorithm 1) | Remaining, in progress |
+| 7 | QE-fusion (the paper's Algorithm 1), `qe_fusion.py` (Step 12) | Code done; works end to end on 100 local test sentences (Step 7b). First numbers with 3 models were inconclusive (fusion did not beat NLLB alone), so the real comparison waits for all models on the full sets |
 | 8 | Everything else (see **Roadmap**) | Remaining |
 
 ## Rules (please read)
@@ -143,7 +143,7 @@ pip install -r requirements.txt
 
 This installs `transformers` version 4.x on purpose. **Do not upgrade
 `transformers` to 5.x**, because IndicTransToolkit breaks with it.
-`requirements.txt` also includes `requests`, `pandas`, `numpy` and `sacrebleu`, which the pipeline scripts in Steps 10-13 use.
+`requirements.txt` also includes `requests`, `pandas`, `numpy` and `sacrebleu`, which the pipeline scripts in Steps 10-14 use.
 
 ### IndicTransToolkit (needs a C++ compiler on Windows)
 
@@ -252,6 +252,23 @@ others. To test your own sentences, edit the `SENTENCES` list at the top of `tes
 
 You're done with Phase 1 when all five models give sensible Hindi sentences.
 (`outputs\test_results.txt` is also the input for the QE test in Step 11.)
+
+### Step 7b: A bigger local test on real test sentences (optional, recommended)
+Three sentences say little. Once you have your test set (Step 9), run the 5 local models on its first 100 sentences
+(the file is already shuffled, so the first 100 are a random slice). Run this in `(venv)`, not `(venv_qe)`:
+```bat
+python test_models.py --input data_test\test_sentences.txt --n 100
+```
+Output: `outputs\local_candidates.csv` (columns `id, source, opus, nllb, ...`; `id` is the line number, so it matches `test_gold_all.csv`).
+It is saved after each model. Use `--batch-size 8` if CUDA runs out of memory, and name models to run only some (`python test_models.py opus nllb --input ...`).
+Then score it in `(venv_qe)` (Steps 11-14) with `outputs\local_candidates.csv` in place of `data\candidate_translations.csv`.
+Only use this for checking that the pipeline works; tune settings on sentences from `data\`, not on the test set.
+
+Tips for a small GPU (6 GB), learned the hard way:
+- Run the heavy models **one per command**, so each gets the whole GPU: `python test_models.py indictrans2 --input ... --n 100 --batch-size 2`, then `python test_models.py qwen --input ... --n 100`.
+- IndicTrans2 uses a lot of memory (no cache, 5 beams). If you see `CUDA error: out of memory`, lower `--batch-size` (4, then 2) or add `--cpu`.
+- This is slow on a laptop (IndicTrans2 on CPU and Qwen on any hardware take a long time for 100 sentences). That is expected: it is only a sanity check. The real, large runs use the models on Bilal's server (Step 10).
+- Finished models are kept in the CSV, so you can stop and continue later.
 
 ---
 
@@ -416,7 +433,26 @@ python qe_score.py data\candidate_translations.csv --scorer cometkiwi --out-scor
 - `--batch-size 16` is the default. `--model` accepts a local `.ckpt` path (for offline use on the cluster).
 - `data\qe_rerank.csv` is QE-reranking: for each sentence, the candidate with the top QE score.
 
-## Step 12: Consensus baseline (no server, no QE needed)
+## Step 12: QE-fusion (combine pieces of different candidates)
+
+QE-reranking picks ONE candidate. QE-fusion builds a new sentence: it takes the top-QE candidate as the base, finds where the
+other candidates differ (word by word, with difflib), tries every alternative for each differing span, and keeps the versions
+with the best CometKiwi score (beam search). It runs in `(venv_qe)`, like Step 11.
+
+```bat
+python qe_fusion.py --selftest
+python qe_fusion.py data\candidate_translations.csv --scorer cometkiwi --limit 200
+```
+- `--selftest` reproduces the paper's Figure 1 example with a toy scorer, no model needed. It must print `OK`.
+- Start with `--limit 200`. The cost is the number of hypotheses scored (about 50 per sentence when the candidates differ a lot), so
+  10,000 sentences on a CPU takes many hours. Cheaper settings: `--top-k 3 --beam 3 --max-slots 10`, or a GPU (`--gpus 1`).
+- It uses the same score cache as Step 11 (`data\qe_cache.jsonl`), so nothing is scored twice.
+- Output `data\qe_fusion.csv`: `id, source, translation, base_model, base_qe, fused_qe, changed, novel, slots, hypotheses_scored`.
+  `novel = yes` means the fused sentence is not identical to any candidate.
+- `--scorer demo` only tests that the code runs. It is not QE; never report its numbers.
+- QE improving the QE score is not the same as a better translation. Judge it against the references in Step 14 (`--extra QE-fusion=data\qe_fusion.csv`).
+
+## Step 13: Consensus baseline (no server, no QE needed)
 
 For each sentence: if most models give the identical sentence, take it. Otherwise take the translation closest to all the others (chrF++ consensus).
 ```bat
@@ -425,15 +461,16 @@ python combine_baseline.py data\candidate_translations.csv --processes 4    # fa
 ```
 Output: `data\baseline_consensus.csv`.
 
-## Step 13: Evaluate
+## Step 14: Evaluate
 
 ```bat
 python evaluate.py data\candidate_translations.csv data\gold_all.csv
-python evaluate.py data\candidate_translations.csv data\gold_all.csv --extra QE-rerank=data\qe_rerank.csv --extra Consensus=data\baseline_consensus.csv
+python evaluate.py data\candidate_translations.csv data\gold_all.csv --extra QE-rerank=data\qe_rerank.csv Consensus=data\baseline_consensus.csv QE-fusion=data\qe_fusion.csv
 ```
 It prints chrF++ and BLEU for each model, for the baseline and for an **oracle** (the best possible pick per sentence; an upper bound).
 Only sentences that every system has translated are scored (a pilot of 200 scores 200).
-`--extra NAME=FILE` adds any method (a CSV with `id` and `translation`), so QE-fusion goes in the same way.
+`--extra NAME=FILE` adds any method (a CSV with `id` and `translation`). Put all the methods after ONE `--extra`, separated by spaces;
+repeating `--extra` keeps only the last one.
 
 ---
 
@@ -444,8 +481,8 @@ Owners are decided in the group. Do these roughly in this order.
 | # | Task | Notes |
 |---|---|---|
 | 1 | Full translation run on the gold set and the test set (Step 10) | Needs Bilal to launch the models. Pilot with 200 sentences first. |
-| 2 | QE-reranking and consensus on the full set; evaluate (Steps 11-13) | Scripts exist. Compare each model, consensus, QE-rerank, oracle. |
-| 3 | **QE-fusion** (`qe_fusion.py`) | Algorithm 1 of the paper: take the top-QE candidate as the base, find where the others differ (difflib), try replacing those spans, keep what raises the QE score (beam search). Needs the real CometKiwi. Will be added to this repo. |
+| 2 | QE-reranking and consensus on the full set; evaluate (Steps 11-14) | Scripts exist. Compare each model, consensus, QE-rerank, oracle. |
+| 3 | QE-fusion (`qe_fusion.py`): code done (Step 12) | Run it on real candidates (needs item 1), start with 200 sentences, then tune `--beam`, `--top-k`, `--max-slots`. |
 | 4 | Final comparison on the held-out test set(s) | Models vs consensus vs QE-rerank vs QE-fusion vs oracle. Report FLORES too (fair comparison, see rule 7). |
 | 5 | **Literature review: gold datasets for Indian languages** | IN22, FLORES-200, NTREX-128, and others: size, languages, licence, whether models trained on them. Written up for the guide. |
 | 6 | **Pipeline for all Indian languages** (not only Hindi) | Needs a language table (codes for each model and for the QE scorer). `make_pairs.py` already reads `sl`/`tl`; it only needs those parameterised. |
@@ -466,12 +503,13 @@ CS769 Project\
   verify_data.py          checks your data\ against data_checksums.txt
   download_models.py      Phase 1: downloads the 5 models into models\
   mt_models.py            Phase 1: loads each model and exposes a translate function
-  test_models.py          Phase 1: runs the models on sample sentences
+  test_models.py          Phase 1: runs the models on the 3 sample sentences, or on sentences from a file (--input)
   make_pairs.py           builds a sentence list and human references from Bilal's pairs file (run on the server)
   api_client.py           talks to the vLLM server (list models, health check, translate, retries)
   run_api_pipeline.py     translates a sentence list with the server's models, resumable
   combine_baseline.py     consensus baseline
   qe_score.py             CometKiwi QE scores and QE-reranking
+  qe_fusion.py            QE-fusion (Algorithm 1 of the paper)
   evaluate.py             chrF++ / BLEU for models, baseline, oracle and extra methods
   make_flores.py          builds a FLORES test set from two line-aligned text files
   data\  data_test\       (not in GitHub) gold set and your test set
@@ -485,7 +523,7 @@ CS769 Project\
 | `'source' is not recognized` | Wrong OS command. Use `venv\Scripts\activate` |
 | `'python' is not recognized` | Try `py` instead, or reinstall Python with "Add to PATH" ticked |
 | `$env:...` gives an error in the terminal | That is PowerShell syntax. In Command Prompt use `set NAME=value` |
-| `ModuleNotFoundError` | The venv is not active, or it is the wrong one. Phase 1 and Steps 10, 12, 13 use `(venv)`. QE (Step 11) uses `(venv_qe)`. Check the start of your prompt |
+| `ModuleNotFoundError` | The venv is not active, or it is the wrong one. Phase 1 and Steps 10, 13, 14 use `(venv)`. QE (Step 11) uses `(venv_qe)`. Check the start of your prompt |
 | `No module named 'comet'` | You are in `(venv)`, not `(venv_qe)` |
 | `torch.cuda.is_available()` is `False` but you have an NVIDIA GPU | CPU-only torch was installed. Redo Step 3 (GPU install) |
 | `Microsoft Visual C++ 14.0 or greater is required` | Install C++ Build Tools (Step 4), then open a NEW terminal |
@@ -504,7 +542,7 @@ CS769 Project\
 | `make_pairs.py` says files already exist | Good, it protects you. For your test set use a new `--out-dir`. Never use `--force` on the gold set |
 | `'NoneType' object has no attribute 'shape'` (IndicTrans2) | Make sure `use_cache=False` is set in `load_indictrans2` in `mt_models.py` (it already is in this repo) |
 | `torch.load` vulnerability / needs torch >= 2.6 | `pip install --upgrade torch` (GPU users: redo the CUDA install command) |
-| `CUDA out of memory` | Test models one at a time instead of all together, or set `DEVICE = "cpu"` in `mt_models.py` |
+| `CUDA out of memory` | Run models one per command; for IndicTrans2 use `--batch-size 2`; or add `--cpu` to `test_models.py` (Step 7b). Check `nvidia-smi` that nothing else holds the GPU |
 | Qwen is very slow | Normal on CPU. Use `Qwen/Qwen2.5-0.5B-Instruct` in `download_models.py` for a lighter model |
 | `UnicodeEncodeError` or boxes instead of Hindi | Read the output files in VS Code, not the terminal |
 | Download stops halfway | Re-run the command, it resumes |
