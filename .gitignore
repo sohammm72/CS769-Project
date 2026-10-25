@@ -1,20 +1,33 @@
-# Virtual environment
+# Virtual environments
 venv/
+venv_qe/
 .venv/
 
-# Downloaded models (many GB, each person downloads their own)
+# Downloaded models and checkpoints (many GB, each person downloads their own)
 models/
+*.ckpt
+lightning_logs/
 
 # Generated results
 outputs/
 
+# DATA - never in GitHub. The gold set is copied from Bilal's server (README Step 8).
+# data/ and data_test/ come from his training pairs file; Bilal asked us to keep them private.
+data/
+data_*/
+*.jsonl
+sentence_validation_results.csv
+
+# Secrets (never commit tokens, keys or passwords)
+.env
+.env.*
+*.token
+*.key
+*.pem
+
 # Python caches
 __pycache__/
 *.pyc
-
-# Secrets (never commit tokens)
-.env
-*.token
 
 # Large model files, in case they end up elsewhere
 *.safetensors

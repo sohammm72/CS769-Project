@@ -1,5 +1,6 @@
-# Install PyTorch FIRST (see README Step 3), then: pip install -r requirements.txt
+# Phase 1 environment (venv). Install PyTorch FIRST (see README Step 3), then: pip install -r requirements.txt
 # IndicTransToolkit is installed separately (needs C++ Build Tools on Windows, see README Step 4)
+# QE (CometKiwi) has its OWN file, requirements_qe.txt, for a separate venv_qe on Python 3.12. Do not mix them.
 
 # Must stay below 5.x: IndicTransToolkit breaks with transformers 5
 transformers<5
@@ -10,3 +11,9 @@ protobuf
 accelerate
 huggingface_hub
 tqdm
+
+# Pipeline scripts (api_client, run_api_pipeline, combine_baseline, evaluate, make_flores)
+requests
+pandas
+numpy
+sacrebleu
