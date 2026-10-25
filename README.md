@@ -486,10 +486,11 @@ Owners are decided in the group. Do these roughly in this order.
 | 4 | Final comparison on the held-out test set(s) | Models vs consensus vs QE-rerank vs QE-fusion vs oracle. Report FLORES too (fair comparison, see rule 7). |
 | 5 | **Literature review: gold datasets for Indian languages** | IN22, FLORES-200, NTREX-128, and others: size, languages, licence, whether models trained on them. Written up for the guide. |
 | 6 | **Pipeline for all Indian languages** (not only Hindi) | Needs a language table (codes for each model and for the QE scorer). `make_pairs.py` already reads `sl`/`tl`; it only needs those parameterised. |
-| 7 | **Plug-and-play models** | One simple way to add any model (a local HF model, a vLLM model or the company's in-house model) and run the same pipeline. |
+| 7 | **Plug-and-play system** (one tool, any size) | One command that takes a single sentence, a short list or a whole dataset of any size, runs the chosen models (a local HF model, a vLLM model or the company's in-house model), then QE scoring, reranking and fusion, and saves the results. Resumable and cached so big runs can stop and continue. Models and languages are added by a short config entry, not by editing code. |
 | 8 | CometKiwi XXL on Bilal's cluster | Check with Bilal whether the weights can be on the server (it has no internet), and how to submit jobs. |
 | 9 | Pilot run with Bilal | Agree when it starts and what he needs from us. |
 | 10 | Hand-off package for Bilal | Code plus a short guide he can run on his model and the company's model. |
+| 11 | **Final presentation and report** | Method (consensus, QE-rerank, QE-fusion), data and setup, results on the full gold and test sets and FLORES, what worked and what did not, literature review, how to use the plug-and-play tool, limits and next steps. |
 
 ## Project structure
 
